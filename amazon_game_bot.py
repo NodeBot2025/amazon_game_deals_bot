@@ -5,15 +5,14 @@ import os
 import random
 import re
 
+# === FACEBOOK PAGE ===
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
 POST_LIMIT = 3
 USER_AGENT = {"User-Agent": "Mozilla/5.0"}
 
-AMAZON_URL = "https://www.amazon.com/Video-Games-Deals"
-
-CONSOLE_KEYWORDS = ["xbox", "playstation", "ps5", "nintendo", "switch", "controller", "game", "video", "console", "gaming", "pc"]
-CONSOLE_FILTER = random.sample(CONSOLE_KEYWORDS, k=3)
+AMAZON_URL = "https://www.amazon.com/gp/goldbox"
+FILTER_KEYWORDS = random.sample(["game", "xbox", "playstation", "nintendo", "switch", "controller", "gaming", "pc"], 3)
 
 def clean_title(text):
     text = re.sub(r"(?i)\b\d{1,3}%\s*off\b|\b\d{1,3}%\b|Limited time deal|Typical:|List:", "", text)
@@ -34,11 +33,14 @@ def generate_hashtags(title):
     return " ".join(tags)
 
 def extract_price_data(block):
-    prices = block.select(".a-price-whole")
-    clean = [p.get_text(strip=True) for p in prices if p.get_text(strip=True).isdigit()]
-    if len(clean) >= 1:
-        return clean[0]
-    return None
+    prices = block.select(".a-offscreen")
+    clean = [p.get_text(strip=True).replace("$", "") for p in prices if "$" in p.text]
+    clean = list(dict.fromkeys(clean))
+    if len(clean) >= 2:
+        return clean[1], clean[0]
+    elif clean:
+        return clean[0], clean[0]
+    return None, None
 
 def get_image_url(block):
     img = block.select_one("img")
@@ -55,66 +57,49 @@ def post_to_facebook(caption, image_url):
     print("[FB POST]", res.status_code, res.text)
 
 def get_deals():
-    print("[FILTER] Using keywords:", CONSOLE_FILTER)
+    print("[FILTER] Using keywords:", FILTER_KEYWORDS)
     soup = BeautifulSoup(requests.get(AMAZON_URL, headers=USER_AGENT).text, "html.parser")
-    blocks = soup.select("div[data-asin][data-component-type='s-search-result']")
+    blocks = soup.select("a[href*='/dp/']")
     random.shuffle(blocks)
 
     deals = []
-    fallback_titles = []
     seen = set()
 
     for block in blocks:
         try:
-            title_tag = block.select_one("h2 a span")
-            href_tag = block.select_one("h2 a")
-            if not title_tag or not href_tag:
-                continue
-            title = clean_title(title_tag.text.strip())
-            href = "https://www.amazon.com" + href_tag.get("href")
-            title_text = title.lower()
-
-            if title in seen:
-                continue
-            seen.add(title)
-
-            if not any(kw in title_text for kw in CONSOLE_FILTER):
-                fallback_titles.append(block)
+            text = block.get_text(strip=True)
+            title = clean_title(text)
+            href = block.get("href")
+            if not title or not href or "/dp/" not in href:
                 continue
 
-            price = extract_price_data(block)
-            image_url = get_image_url(block)
-            if not (title and price and image_url):
+            title_lower = title.lower()
+            if not any(kw in title_lower for kw in FILTER_KEYWORDS):
+                continue
+
+            asin = href.split("/dp/")[1].split("/")[0].split("?")[0]
+            if asin in seen:
+                continue
+            seen.add(asin)
+
+            full_link = f"https://www.amazon.com/dp/{asin}?tag=amazongames04-20"
+            parent = block.find_parent("div")
+
+            list_price, deal_price = extract_price_data(parent or block)
+            image_url = get_image_url(parent or block)
+
+            if not (title and deal_price and image_url):
                 continue
 
             hashtags = generate_hashtags(title)
-            caption = f"🎮 {title}\nPrice: ${price}\n{href}\n\n{hashtags}"
+            caption = f"🎮 {title}\nList: ${list_price} | Deal: ${deal_price}\n{full_link}\n\n{hashtags}"
             deals.append((caption, image_url))
+
             if len(deals) >= POST_LIMIT:
                 break
 
         except Exception as e:
             print("[ERROR BLOCK]", e)
-
-    if not deals and fallback_titles:
-        print("[FALLBACK] No match found — using general titles.")
-        for block in fallback_titles[:POST_LIMIT]:
-            try:
-                title_tag = block.select_one("h2 a span")
-                href_tag = block.select_one("h2 a")
-                if not title_tag or not href_tag:
-                    continue
-                title = clean_title(title_tag.text.strip())
-                href = "https://www.amazon.com" + href_tag.get("href")
-                price = extract_price_data(block)
-                image_url = get_image_url(block)
-                if not (title and price and image_url):
-                    continue
-                hashtags = generate_hashtags(title)
-                caption = f"🎮 {title}\nPrice: ${price}\n{href}\n\n{hashtags}"
-                deals.append((caption, image_url))
-            except Exception as e:
-                print("[FALLBACK ERROR]", e)
 
     return deals
 
