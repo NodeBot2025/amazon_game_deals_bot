@@ -1,3 +1,5 @@
+# Put this full script inside your amazon_game_bot.py file
+
 import requests
 from bs4 import BeautifulSoup
 import time
@@ -5,7 +7,6 @@ import os
 import random
 import re
 
-# === FACEBOOK PAGE ===
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
 POST_LIMIT = 3
@@ -60,6 +61,7 @@ def get_deals():
     print("[FILTER] Using keywords:", FILTER_KEYWORDS)
     soup = BeautifulSoup(requests.get(AMAZON_URL, headers=USER_AGENT).text, "html.parser")
     blocks = soup.select("a[href*='/dp/']")
+    print("[DEBUG] Total deal blocks found:", len(blocks))
     random.shuffle(blocks)
 
     deals = []
@@ -69,13 +71,15 @@ def get_deals():
         try:
             text = block.get_text(strip=True)
             title = clean_title(text)
+            print("[DEBUG] Sample title:", title.lower())
             href = block.get("href")
             if not title or not href or "/dp/" not in href:
                 continue
 
             title_lower = title.lower()
-            if not any(kw in title_lower for kw in FILTER_KEYWORDS):
-                continue
+            # TEMPORARY: Disable filter for testing
+            # if not any(kw in title_lower for kw in FILTER_KEYWORDS):
+            #     continue
 
             asin = href.split("/dp/")[1].split("/")[0].split("?")[0]
             if asin in seen:
