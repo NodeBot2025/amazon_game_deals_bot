@@ -1,5 +1,3 @@
-# Put this full script inside your amazon_game_bot.py file
-
 import requests
 from bs4 import BeautifulSoup
 import time
@@ -13,7 +11,7 @@ POST_LIMIT = 3
 USER_AGENT = {"User-Agent": "Mozilla/5.0"}
 
 AMAZON_URL = "https://www.amazon.com/gp/goldbox"
-FILTER_KEYWORDS = random.sample(["game", "xbox", "playstation", "nintendo", "switch", "controller", "gaming", "pc"], 3)
+FILTER_KEYWORDS = ["game", "xbox", "playstation", "nintendo", "switch", "controller", "console", "gaming", "ps5", "pc"]
 
 def clean_title(text):
     text = re.sub(r"(?i)\b\d{1,3}%\s*off\b|\b\d{1,3}%\b|Limited time deal|Typical:|List:", "", text)
@@ -58,10 +56,11 @@ def post_to_facebook(caption, image_url):
     print("[FB POST]", res.status_code, res.text)
 
 def get_deals():
-    print("[FILTER] Using keywords:", FILTER_KEYWORDS)
+    print("[BOT STARTED]")
+    print("[FILTER] Keywords:", FILTER_KEYWORDS)
     soup = BeautifulSoup(requests.get(AMAZON_URL, headers=USER_AGENT).text, "html.parser")
     blocks = soup.select("a[href*='/dp/']")
-    print("[DEBUG] Total deal blocks found:", len(blocks))
+    print("[DEBUG] Found", len(blocks), "deal blocks.")
     random.shuffle(blocks)
 
     deals = []
@@ -71,15 +70,15 @@ def get_deals():
         try:
             text = block.get_text(strip=True)
             title = clean_title(text)
-            print("[DEBUG] Sample title:", title.lower())
+            title_lower = title.lower()
+            print("[DEBUG] Checking:", title_lower)
+
+            if not any(kw in title_lower for kw in FILTER_KEYWORDS):
+                continue
+
             href = block.get("href")
             if not title or not href or "/dp/" not in href:
                 continue
-
-            title_lower = title.lower()
-            # TEMPORARY: Disable filter for testing
-            # if not any(kw in title_lower for kw in FILTER_KEYWORDS):
-            #     continue
 
             asin = href.split("/dp/")[1].split("/")[0].split("?")[0]
             if asin in seen:
@@ -108,7 +107,6 @@ def get_deals():
     return deals
 
 def main():
-    print("[BOT STARTED]")
     deals = get_deals()
     if not deals:
         print("[INFO] No deals found.")
