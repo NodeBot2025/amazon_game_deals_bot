@@ -1,4 +1,4 @@
-name: Post Amazon Game Deals to Facebook
+name: Post Amazon Game Deals to Facebook (PAAPI)
 
 on:
   schedule:
