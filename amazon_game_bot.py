@@ -1,57 +1,83 @@
-import requests 
-from bs4 import BeautifulSoup
-import time
+import requests
+import hashlib
+import hmac
+import base64
+import datetime
+import json
 import os
-import random
-import re
-from dotenv import load_dotenv
+import time
 
-load_dotenv()
+# === CREDENTIALS ===
+ACCESS_KEY = "AKPARFMRQS1744843266"
+SECRET_KEY = "3VqJat+OOZXddc2iL00w6+LR5slKvDXIEg6EOFqJ"
+ASSOCIATE_TAG = "amazongames04-20"
+REGION = "us-east-1"
+HOST = "webservices.amazon.com"
+ENDPOINT = f"https://{HOST}/paapi5/searchitems"
 
-AMAZON_URL = "https://www.amazon.com/s?i=videogames&rh=n%3A468642"
-AFFILIATE_TAG = "?tag=amazongames04-20"
+# === FACEBOOK PAGE ===
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
-POST_LIMIT = 5
-USER_AGENT = {"User-Agent": "Mozilla/5.0"}
 
-def extract_price_data(block):
-    prices = block.select(".a-offscreen")
-    clean = [p.get_text(strip=True).replace("$", "") for p in prices if "$" in p.text]
-    clean = list(dict.fromkeys(clean))
-    if len(clean) >= 2:
-        return clean[1], clean[0]
-    elif clean:
-        return clean[0], clean[0]
-    return None, None
+# === HEADERS ===
+SERVICE = "ProductAdvertisingAPI"
+CONTENT_TYPE = "application/json; charset=utf-8"
 
-def get_image_url(block):
-    img = block.select_one("img")
-    return img["src"] if img else None
+def sign(key, msg):
+    return hmac.new(key, msg.encode("utf-8"), hashlib.sha256).digest()
 
-def calculate_discount(list_price, deal_price):
-    try:
-        return f"{round((float(list_price) - float(deal_price)) / float(list_price) * 100)}% off"
-    except:
-        return None
+def get_signature_key(key, date_stamp, regionName, serviceName):
+    kDate = sign(("AWS4" + key).encode("utf-8"), date_stamp)
+    kRegion = sign(kDate, regionName)
+    kService = sign(kRegion, serviceName)
+    kSigning = sign(kService, "aws4_request")
+    return kSigning
 
-def clean_title(text):
-    text = re.sub(r'(?i)\b\d{1,3}%\s*off\b|\b\d{1,3}%\b|Limited time deal|Typical:|List:', '', text)
-    text = re.sub(r'\$\d+(?:\.\d{2})?', '', text)
-    return re.sub(r'\s+', ' ', text).strip()
+def build_paapi_request():
+    payload = {
+        "Keywords": "video game",
+        "SearchIndex": "VideoGames",
+        "ItemCount": 3,
+        "Resources": [
+            "Images.Primary.Medium",
+            "ItemInfo.Title",
+            "Offers.Listings.Price",
+            "Offers.Listings.SavingBasis"
+        ],
+        "PartnerTag": ASSOCIATE_TAG,
+        "PartnerType": "Associates",
+        "Marketplace": "www.amazon.com"
+    }
 
-def generate_hashtags(title):
-    words = re.findall(r"\b[A-Z][a-z]+|[a-z]{4,}\b", title)
-    seen = set()
-    tags = []
-    for word in words:
-        tag = "#" + re.sub(r'[^a-zA-Z0-9]', '', word.title())
-        if tag not in seen and len(tag) > 4:
-            tags.append(tag)
-            seen.add(tag)
-        if len(tags) >= 6:
-            break
-    return " ".join(tags)
+    amz_date = datetime.datetime.utcnow().strftime("%Y%m%dT%H%M%SZ")
+    date_stamp = datetime.datetime.utcnow().strftime("%Y%m%d")
+
+    canonical_uri = "/paapi5/searchitems"
+    canonical_querystring = ""
+    payload_json = json.dumps(payload)
+
+    canonical_headers = f"content-encoding:amz-1.0\ncontent-type:{CONTENT_TYPE}\nhost:{HOST}\nx-amz-date:{amz_date}\n"
+    signed_headers = "content-encoding;content-type;host;x-amz-date"
+    payload_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+
+    canonical_request = f"POST\n{canonical_uri}\n{canonical_querystring}\n{canonical_headers}\n{signed_headers}\n{payload_hash}"
+    algorithm = "AWS4-HMAC-SHA256"
+    credential_scope = f"{date_stamp}/{REGION}/{SERVICE}/aws4_request"
+    string_to_sign = f"{algorithm}\n{amz_date}\n{credential_scope}\n{hashlib.sha256(canonical_request.encode('utf-8')).hexdigest()}"
+
+    signing_key = get_signature_key(SECRET_KEY, date_stamp, REGION, SERVICE)
+    signature = hmac.new(signing_key, string_to_sign.encode("utf-8"), hashlib.sha256).hexdigest()
+
+    headers = {
+        "Content-Encoding": "amz-1.0",
+        "Content-Type": CONTENT_TYPE,
+        "Host": HOST,
+        "X-Amz-Date": amz_date,
+        "X-Amz-Target": "com.amazon.paapi5.v1.ProductAdvertisingAPIv1.SearchItems",
+        "Authorization": f"{algorithm} Credential={ACCESS_KEY}/{credential_scope}, SignedHeaders={signed_headers}, Signature={signature}"
+    }
+
+    return headers, payload_json
 
 def post_to_facebook(caption, image_url):
     url = f"https://graph.facebook.com/{FB_PAGE_ID}/photos"
@@ -60,66 +86,30 @@ def post_to_facebook(caption, image_url):
         "url": image_url,
         "access_token": FB_ACCESS_TOKEN
     }
-    response = requests.post(url, data=payload)
-    print("[FB POST]", response.status_code, response.text)
-
-def get_deals():
-    soup = BeautifulSoup(requests.get(AMAZON_URL, headers=USER_AGENT).text, "html.parser")
-    blocks = soup.select("a[href*='/dp/']")
-    random.shuffle(blocks)
-
-    deals = []
-    seen = set()
-
-    for block in blocks:
-        try:
-            text = block.get_text(strip=True)
-            title = clean_title(text)
-            href = block.get("href")
-            if not title or not href or "/dp/" not in href:
-                continue
-
-            if not any(kw in title.lower() for kw in ["game", "xbox", "playstation", "ps5", "nintendo", "switch", "controller"]):
-                continue
-
-            asin = href.split("/dp/")[1].split("/")[0].split("?")[0]
-            if asin in seen:
-                continue
-            seen.add(asin)
-
-            full_link = f"https://www.amazon.com/dp/{asin}{AFFILIATE_TAG}"
-            parent = block.find_parent("div")
-
-            list_price, deal_price = extract_price_data(parent or block)
-            image_url = get_image_url(parent or block)
-            discount = calculate_discount(list_price, deal_price)
-
-            if not (title and discount and list_price and deal_price and image_url):
-                continue
-
-            hashtags = generate_hashtags(title)
-            caption = f"{discount}  {title}\n{discount} - List: ${list_price} | Deal: ${deal_price}\nLink: {full_link}\n\n{hashtags}"
-            deals.append((caption, image_url))
-            if len(deals) >= POST_LIMIT:
-                break
-
-        except Exception as e:
-            print("[ERROR BLOCK]", e)
-
-    return deals
+    res = requests.post(url, data=payload)
+    print("[FB POST]", res.status_code, res.text)
 
 def main():
-    print("[BOT STARTED]")
-    deals = get_deals()
+    headers, body = build_paapi_request()
+    response = requests.post(ENDPOINT, headers=headers, data=body)
+    data = response.json()
 
-    if not deals:
-        print("[INFO] No deals found.")
+    if "SearchResult" not in data or "Items" not in data["SearchResult"]:
+        print("[INFO] No items returned from Amazon API.")
+        print(data)
         return
 
-    for caption, image_url in deals:
-        print("[POSTING DEAL]")
-        post_to_facebook(caption, image_url)
-        time.sleep(10)
+    for item in data["SearchResult"]["Items"]:
+        title = item.get("ItemInfo", {}).get("Title", {}).get("DisplayValue", "")
+        url = item.get("DetailPageURL", "")
+        image = item.get("Images", {}).get("Primary", {}).get("Medium", {}).get("URL", "")
+        offers = item.get("Offers", {}).get("Listings", [{}])[0]
+        price = offers.get("Price", {}).get("DisplayAmount", "")
+        saving = offers.get("SavingBasis", {}).get("DisplayAmount", "")
+
+        caption = f"🎮 {title}\nPrice: {price}\n{url}\n#Amazon #GameDeals"
+        post_to_facebook(caption, image)
+        time.sleep(5)
 
 if __name__ == "__main__":
     main()
