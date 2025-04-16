@@ -5,13 +5,15 @@ import os
 import random
 import re
 
-# === FACEBOOK PAGE ===
 FB_PAGE_ID = os.getenv("FB_PAGE_ID")
 FB_ACCESS_TOKEN = os.getenv("FB_ACCESS_TOKEN")
 POST_LIMIT = 3
 USER_AGENT = {"User-Agent": "Mozilla/5.0"}
 
 AMAZON_URL = "https://www.amazon.com/Video-Games-Deals"
+
+CONSOLE_KEYWORDS = ["xbox", "playstation", "ps5", "nintendo", "switch", "controller", "game", "video", "console", "gaming", "pc"]
+CONSOLE_FILTER = random.sample(CONSOLE_KEYWORDS, k=3)
 
 def clean_title(text):
     text = re.sub(r"(?i)\b\d{1,3}%\s*off\b|\b\d{1,3}%\b|Limited time deal|Typical:|List:", "", text)
@@ -52,19 +54,17 @@ def post_to_facebook(caption, image_url):
     res = requests.post(url, data=payload)
     print("[FB POST]", res.status_code, res.text)
 
-CONSOLE_FILTER = ['controller', 'switch', 'gaming']
 def get_deals():
+    print("[FILTER] Using keywords:", CONSOLE_FILTER)
     soup = BeautifulSoup(requests.get(AMAZON_URL, headers=USER_AGENT).text, "html.parser")
     blocks = soup.select("div[data-asin][data-component-type='s-search-result']")
     random.shuffle(blocks)
 
     deals = []
+    fallback_titles = []
     seen = set()
 
     for block in blocks:
-        title_check = block.select_one("h2 a span")
-        if not title_check or not any(kw in title_check.text.lower() for kw in CONSOLE_FILTER):
-            continue
         try:
             title_tag = block.select_one("h2 a span")
             href_tag = block.select_one("h2 a")
@@ -72,9 +72,16 @@ def get_deals():
                 continue
             title = clean_title(title_tag.text.strip())
             href = "https://www.amazon.com" + href_tag.get("href")
+            title_text = title.lower()
+
             if title in seen:
                 continue
             seen.add(title)
+
+            if not any(kw in title_text for kw in CONSOLE_FILTER):
+                fallback_titles.append(block)
+                continue
+
             price = extract_price_data(block)
             image_url = get_image_url(block)
             if not (title and price and image_url):
@@ -88,6 +95,26 @@ def get_deals():
 
         except Exception as e:
             print("[ERROR BLOCK]", e)
+
+    if not deals and fallback_titles:
+        print("[FALLBACK] No match found — using general titles.")
+        for block in fallback_titles[:POST_LIMIT]:
+            try:
+                title_tag = block.select_one("h2 a span")
+                href_tag = block.select_one("h2 a")
+                if not title_tag or not href_tag:
+                    continue
+                title = clean_title(title_tag.text.strip())
+                href = "https://www.amazon.com" + href_tag.get("href")
+                price = extract_price_data(block)
+                image_url = get_image_url(block)
+                if not (title and price and image_url):
+                    continue
+                hashtags = generate_hashtags(title)
+                caption = f"🎮 {title}\nPrice: ${price}\n{href}\n\n{hashtags}"
+                deals.append((caption, image_url))
+            except Exception as e:
+                print("[FALLBACK ERROR]", e)
 
     return deals
 
