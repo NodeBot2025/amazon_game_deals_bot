@@ -11,7 +11,6 @@ POST_LIMIT = 3
 USER_AGENT = {"User-Agent": "Mozilla/5.0"}
 
 AMAZON_URL = "https://www.amazon.com/gp/goldbox"
-FILTER_KEYWORDS = ["game", "xbox", "playstation", "nintendo", "switch", "controller", "console", "gaming", "ps5", "pc"]
 
 def clean_title(text):
     text = re.sub(r"(?i)\b\d{1,3}%\s*off\b|\b\d{1,3}%\b|Limited time deal|Typical:|List:", "", text)
@@ -57,7 +56,7 @@ def post_to_facebook(caption, image_url):
 
 def get_deals():
     print("[BOT STARTED]")
-        soup = BeautifulSoup(requests.get(AMAZON_URL, headers=USER_AGENT).text, "html.parser")
+    soup = BeautifulSoup(requests.get(AMAZON_URL, headers=USER_AGENT).text, "html.parser")
     blocks = soup.select("a[href*='/dp/']")
     print("[DEBUG] Found", len(blocks), "deal blocks.")
     random.shuffle(blocks)
@@ -72,7 +71,7 @@ def get_deals():
             title_lower = title.lower()
             print("[DEBUG] Checking:", title_lower)
 
-                        href = block.get("href")
+            href = block.get("href")
             if not title or not href or "/dp/" not in href:
                 continue
 
@@ -91,7 +90,7 @@ def get_deals():
                 continue
 
             hashtags = generate_hashtags(title)
-            caption = f"🎮 {title}\nList: ${list_price} | Deal: ${deal_price}\n{full_link}\n\n{hashtags}"
+            caption = f"🎯 {title}\nList: ${list_price} | Deal: ${deal_price}\n{full_link}\n\n{hashtags}"
             deals.append((caption, image_url))
 
             if len(deals) >= POST_LIMIT:
