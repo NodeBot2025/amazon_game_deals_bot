@@ -8,9 +8,9 @@ import os
 import time
 
 # === CREDENTIALS ===
-ACCESS_KEY = "AKPARFMRQS1744843266"
-SECRET_KEY = "3VqJat+OOZXddc2iL00w6+LR5slKvDXIEg6EOFqJ"
-ASSOCIATE_TAG = "amazongames04-20"
+ACCESS_KEY = os.getenv("PAAPI_ACCESS_KEY")
+SECRET_KEY = os.getenv("PAAPI_SECRET_KEY")
+ASSOCIATE_TAG = os.getenv("PAAPI_TAG", "amazongames04-20")
 REGION = "us-east-1"
 HOST = "webservices.amazon.com"
 ENDPOINT = f"https://{HOST}/paapi5/searchitems"
