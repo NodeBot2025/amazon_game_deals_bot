@@ -57,8 +57,7 @@ def post_to_facebook(caption, image_url):
 
 def get_deals():
     print("[BOT STARTED]")
-    print("[FILTER] Keywords:", FILTER_KEYWORDS)
-    soup = BeautifulSoup(requests.get(AMAZON_URL, headers=USER_AGENT).text, "html.parser")
+        soup = BeautifulSoup(requests.get(AMAZON_URL, headers=USER_AGENT).text, "html.parser")
     blocks = soup.select("a[href*='/dp/']")
     print("[DEBUG] Found", len(blocks), "deal blocks.")
     random.shuffle(blocks)
@@ -73,10 +72,7 @@ def get_deals():
             title_lower = title.lower()
             print("[DEBUG] Checking:", title_lower)
 
-            if not any(kw in title_lower for kw in FILTER_KEYWORDS):
-                continue
-
-            href = block.get("href")
+                        href = block.get("href")
             if not title or not href or "/dp/" not in href:
                 continue
 
